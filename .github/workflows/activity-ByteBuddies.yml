@@ -1,4 +1,4 @@
-name: CipherLab Automation Changes
+name: ByteBuddies automation change
 
 on:
   schedule:
