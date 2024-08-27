@@ -1,13 +1,9 @@
-name: ByteBuddies automation changes
+name: CipherLab Automation Changes
 
 on:
-  push:
-    branches:
-      - main
   schedule:
-    - cron: '30 9 * * *'  # Triggers at 9:30 AM daily
-    - cron: '0 15 * * *'  # Triggers at 3:00 PM daily
-  workflow_dispatch:      # Allows manual triggering
+    - cron: '0 */2 * * *'  # Every 2 hours
+  workflow_dispatch:
 
 jobs:
   setup_and_balance_activity:
@@ -29,20 +25,13 @@ jobs:
       - name: Authenticate GitHub CLI
         run: echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
 
-      - name: Create .gitignore for Auto Files
-        run: |
-          echo "Change_autologs.txt" >> .gitignore
-          git add .gitignore
-          git commit -m "Update .gitignore"
-          git push origin main
-
       - name: Fetch Activity Data
         id: fetch_activity
         run: |
-          COMMIT_COUNT=$(gh api -X GET repos/${{ github.repository }}/commits | jq length)
-          PR_COUNT=$(gh api -X GET repos/${{ github.repository }}/pulls | jq length)
-          ISSUE_COUNT=$(gh api -X GET repos/${{ github.repository }}/issues | jq length)
-          REVIEW_COUNT=$(gh api -X GET repos/${{ github.repository }}/pulls/reviews | jq length)
+          COMMIT_COUNT=$(gh api -X GET repos/:owner/:repo/commits | jq length)
+          PR_COUNT=$(gh api -X GET repos/:owner/:repo/pulls | jq length)
+          ISSUE_COUNT=$(gh api -X GET repos/:owner/:repo/issues | jq length)
+          REVIEW_COUNT=$(gh api -X GET repos/:owner/:repo/pulls/reviews | jq length)
           TOTAL_COUNT=$((COMMIT_COUNT + PR_COUNT + ISSUE_COUNT + REVIEW_COUNT))
           echo "commit_pct=$((COMMIT_COUNT * 100 / TOTAL_COUNT))" >> $GITHUB_ENV
           echo "pr_pct=$((PR_COUNT * 100 / TOTAL_COUNT))" >> $GITHUB_ENV
@@ -52,24 +41,40 @@ jobs:
       - name: Determine Next Action
         id: decide_action
         run: |
-          if [[ ${{ env.review_pct }} -lt 10 ]]; then
-            NEXT_ACTION="review"
-          elif [[ ${{ env.issue_pct }} -lt 10 ]]; then
-            NEXT_ACTION="issue"
-          elif [[ ${{ env.pr_pct }} -lt 10 ]]; then
-            NEXT_ACTION="pr"
-          else
+          # Define minimum thresholds for activity balance
+          MIN_COMMIT_PCT=10
+          MIN_PR_PCT=10
+          MIN_ISSUE_PCT=10
+          MIN_REVIEW_PCT=10
+
+          # Get the current percentages from environment variables
+          COMMIT_PCT=${{ env.commit_pct }}
+          PR_PCT=${{ env.pr_pct }}
+          ISSUE_PCT=${{ env.issue_pct }}
+          REVIEW_PCT=${{ env.review_pct }}
+
+          # Determine the least performed activity
+          if [[ $COMMIT_PCT -lt $MIN_COMMIT_PCT && $PR_PCT -ge $MIN_PR_PCT && $ISSUE_PCT -ge $MIN_ISSUE_PCT && $REVIEW_PCT -ge $MIN_REVIEW_PCT ]]; then
             NEXT_ACTION="commit"
+          elif [[ $PR_PCT -lt $MIN_PR_PCT && $COMMIT_PCT -ge $MIN_COMMIT_PCT && $ISSUE_PCT -ge $MIN_ISSUE_PCT && $REVIEW_PCT -ge $MIN_REVIEW_PCT ]]; then
+            NEXT_ACTION="pr"
+          elif [[ $ISSUE_PCT -lt $MIN_ISSUE_PCT && $COMMIT_PCT -ge $MIN_COMMIT_PCT && $PR_PCT -ge $MIN_PR_PCT && $REVIEW_PCT -ge $MIN_REVIEW_PCT ]]; then
+            NEXT_ACTION="issue"
+          elif [[ $REVIEW_PCT -lt $MIN_REVIEW_PCT && $COMMIT_PCT -ge $MIN_COMMIT_PCT && $PR_PCT -ge $MIN_PR_PCT && $ISSUE_PCT -ge $MIN_ISSUE_PCT ]]; then
+            NEXT_ACTION="review"
+          else
+            NEXT_ACTION="commit"  # Default action if all percentages are above the threshold
           fi
-          echo "action=${NEXT_ACTION}" >> $GITHUB_ENV
+
+          echo "::set-output name=action::${NEXT_ACTION}"
 
       - name: Perform Action
         run: |
-          case "${{ env.action }}" in
+          case "${{ steps.decide_action.outputs.action }}" in
             commit)
               echo "Making changes to the file and committing..."
               echo "// Change made by script on $(date)" >> Change_autologs.txt
-              git add .
+              git add Change_autologs.txt
               git commit -m "Update regarding specific functionality"
               git push origin main
               ;;
@@ -77,7 +82,7 @@ jobs:
               echo "Creating and resolving a PR..."
               git checkout -b "feature-auto-pr-$(date +%s)"
               echo "// Auto-generated changes for PR" >> auto_change.txt
-              git add .
+              git add auto_change.txt
               git commit -m "Feature: auto-generated PR"
               git push origin HEAD
               gh pr create --title "Auto PR Feature" --body "This PR was automatically created."
