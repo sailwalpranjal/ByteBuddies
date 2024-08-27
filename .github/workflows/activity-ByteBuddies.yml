@@ -1,4 +1,4 @@
-name: ByteBuddies automation change
+name: ByteBuddies Automation Change
 
 on:
   schedule:
@@ -38,45 +38,21 @@ jobs:
           git pull origin main || true  # Ensure the branch is up-to-date
           git push origin main || echo "Push failed; might need manual intervention"
 
-      - name: Fetch Activity Data
-        id: fetch_activity
+      - name: Manage Auto Files
         run: |
-          COMMIT_COUNT=$(gh api -X GET repos/:owner/:repo/commits | jq length)
-          PR_COUNT=$(gh api -X GET repos/:owner/:repo/pulls | jq length)
-          ISSUE_COUNT=$(gh api -X GET repos/:owner/:repo/issues | jq length)
-          REVIEW_COUNT=$(gh api -X GET repos/:owner/:repo/pulls/reviews | jq length)
-          TOTAL_COUNT=$((COMMIT_COUNT + PR_COUNT + ISSUE_COUNT + REVIEW_COUNT))
-          echo "commit_pct=$((COMMIT_COUNT * 100 / TOTAL_COUNT))" >> $GITHUB_ENV
-          echo "pr_pct=$((PR_COUNT * 100 / TOTAL_COUNT))" >> $GITHUB_ENV
-          echo "issue_pct=$((ISSUE_COUNT * 100 / TOTAL_COUNT))" >> $GITHUB_ENV
-          echo "review_pct=$((REVIEW_COUNT * 100 / TOTAL_COUNT))" >> $GITHUB_ENV
-
-      - name: Determine Next Action
-        id: decide_action
-        run: |
-          MIN_COMMIT_PCT=10
-          MIN_PR_PCT=10
-          MIN_ISSUE_PCT=10
-          MIN_REVIEW_PCT=10
-
-          COMMIT_PCT=${{ env.commit_pct }}
-          PR_PCT=${{ env.pr_pct }}
-          ISSUE_PCT=${{ env.issue_pct }}
-          REVIEW_PCT=${{ env.review_pct }}
-
-          if [[ $COMMIT_PCT -lt $MIN_COMMIT_PCT && $PR_PCT -ge $MIN_PR_PCT && $ISSUE_PCT -ge $MIN_ISSUE_PCT && $REVIEW_PCT -ge $MIN_REVIEW_PCT ]]; then
-            NEXT_ACTION="commit"
-          elif [[ $PR_PCT -lt $MIN_PR_PCT && $COMMIT_PCT -ge $MIN_COMMIT_PCT && $ISSUE_PCT -ge $MIN_ISSUE_PCT && $REVIEW_PCT -ge $MIN_REVIEW_PCT ]]; then
-            NEXT_ACTION="pr"
-          elif [[ $ISSUE_PCT -lt $MIN_ISSUE_PCT && $COMMIT_PCT -ge $MIN_COMMIT_PCT && $PR_PCT -ge $MIN_PR_PCT && $REVIEW_PCT -ge $MIN_REVIEW_PCT ]]; then
-            NEXT_ACTION="issue"
-          elif [[ $REVIEW_PCT -lt $MIN_REVIEW_PCT && $COMMIT_PCT -ge $MIN_COMMIT_PCT && $PR_PCT -ge $MIN_PR_PCT && $ISSUE_PCT -ge $MIN_ISSUE_PCT ]]; then
-            NEXT_ACTION="review"
-          else
-            NEXT_ACTION="commit"
-          fi
-
-          echo "::set-output name=action::${NEXT_ACTION}"
+          # Temporarily remove files from .gitignore
+          sed -i '/Change_autologs.txt/d' .gitignore
+          sed -i '/auto_change.txt/d' .gitignore
+          git add Change_autologs.txt auto_change.txt
+          git commit -m "Update regarding specific functionality" || echo "No changes to commit"
+          git pull origin main || true  # Ensure branch is up-to-date before push
+          git push origin main || echo "Push failed; might need manual intervention"
+          # Restore .gitignore
+          echo "Change_autologs.txt" >> .gitignore
+          echo "auto_change.txt" >> .gitignore
+          git add .gitignore
+          git commit -m "Restore .gitignore" || echo "No changes to commit"
+          git push origin main || echo "Push failed; might need manual intervention"
 
       - name: Perform Action
         run: |
